@@ -1,0 +1,13 @@
+{
+  "name": "far-out-visualizer",
+  "version": "1.0.0",
+  "description": "Psychedelic music visualizer that listens to system audio",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "web": "python -m http.server 5177 --bind 127.0.0.1"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1"
+  }
+}

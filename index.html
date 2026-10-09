@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Far Out - Music Visualizer</title>
+<style>
+  :root {
+    --glass: rgba(10, 6, 24, .62);
+    --line: rgba(255, 255, 255, .16);
+    --fg: #f4eeff;
+    --dim: #b9acd8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #000; color: var(--fg); overflow: hidden;
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  canvas#gl { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; }
+  body:not(.active) canvas#gl { cursor: none; }
+
+  /* ---------- landing overlay ---------- */
+  #overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 20px;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,.25), rgba(0,0,0,.72)); transition: opacity .5s, visibility .5s; }
+  #overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+  .card { width: min(560px, 100%); padding: 28px 28px 22px; border-radius: 22px; background: var(--glass);
+    border: 1px solid var(--line); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    box-shadow: 0 20px 80px rgba(0,0,0,.6), 0 0 80px rgba(160, 80, 255, .18); }
+  h1 { margin: 0 0 2px; font-size: clamp(40px, 8vw, 62px); letter-spacing: .02em; line-height: 1;
+    background: linear-gradient(90deg, #ff4fd8, #ffd84f, #4fffa8, #4fc3ff, #b04fff, #ff4fd8); background-size: 300% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent; animation: slide 6s linear infinite; }
+  @keyframes slide { to { background-position: 300% 0; } }
+  .sub { color: var(--dim); margin: 0 0 18px; }
+  button { font: inherit; color: var(--fg); cursor: pointer; border-radius: 12px; border: 1px solid var(--line);
+    background: rgba(255,255,255,.07); padding: 10px 14px; transition: background .15s, transform .1s, border-color .15s; }
+  button:hover { background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.35); }
+  button:active { transform: scale(.98); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { width: 100%; padding: 15px 16px; font-size: 17px; font-weight: 650; border: 0; color: #12031f;
+    background: linear-gradient(90deg, #ff6ad5, #ffd86a, #6affc0, #6ac9ff); background-size: 200% 100%; animation: slide 5s linear infinite; }
+  button.primary:hover { filter: brightness(1.1); }
+  .help { color: var(--dim); font-size: 13px; margin: 8px 2px 14px; }
+  .help b, .help kbd { color: var(--fg); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  #overlayMsg { margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; background: rgba(255, 90, 120, .16); border: 1px solid rgba(255, 90, 120, .45); font-size: 14px; }
+  #deviceRow { margin: 0 0 12px; }
+  select { width: 100%; font: inherit; color: var(--fg); background: rgba(0,0,0,.4); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+  .warn { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--dim); font-size: 12.5px; }
+  .keys { margin-top: 10px; color: var(--dim); font-size: 12.5px; }
+  kbd { padding: 1px 6px; border-radius: 5px; border: 1px solid var(--line); background: rgba(255,255,255,.08); font: 12px ui-monospace, Consolas, monospace; }
+  #btnClose { position: absolute; top: 14px; right: 14px; padding: 4px 10px; }
+  body.nohud #btnClose { display: none; }
+
+  /* ---------- HUD ---------- */
+  #hud { position: fixed; left: 50%; bottom: 18px; transform: translate(-50%, 20px); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center;
+    padding: 8px 10px; border-radius: 16px; background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    opacity: 0; pointer-events: none; transition: opacity .35s, transform .35s; max-width: calc(100vw - 24px); }
+  body.active:not(.nohud) #hud { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  #hud button { padding: 7px 11px; font-size: 13.5px; }
+  #hud button.on { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.5); }
+  #sceneName { font-weight: 650; padding: 0 8px; min-width: 130px; text-align: center; }
+  #hud label { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 13px; }
+  input[type=range] { width: 90px; accent-color: #d86aff; }
+
+  /* ---------- toast / hints ---------- */
+  #toast { position: fixed; top: 6vh; left: 50%; transform: translateX(-50%); text-align: center; opacity: 0; pointer-events: none; transition: opacity .6s;
+    font-weight: 800; letter-spacing: .06em; text-shadow: 0 0 24px rgba(255, 100, 255, .9), 0 2px 8px rgba(0,0,0,.8); max-width: 90vw; }
+  #toast.show { opacity: 1; transition: opacity .15s; }
+  #toast.scene { font-size: clamp(26px, 5vw, 54px); text-transform: uppercase; }
+  #toast.info { font-size: 15px; font-weight: 600; letter-spacing: 0; padding: 8px 14px; border-radius: 10px; background: var(--glass); border: 1px solid var(--line); text-shadow: none; }
+  #silentHint { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); padding: 10px 16px; border-radius: 12px; max-width: min(640px, 92vw);
+    background: rgba(255, 170, 60, .18); border: 1px solid rgba(255, 170, 60, .55); font-size: 14px; text-align: center; backdrop-filter: blur(10px); }
+  #glError { position: fixed; inset: 20px; margin: 0; padding: 16px; overflow: auto; white-space: pre-wrap; background: #200; color: #fbb; border: 1px solid #f66; border-radius: 12px; font: 13px ui-monospace, Consolas, monospace; z-index: 99; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<pre id="glError" hidden></pre>
+
+<div id="toast"></div>
+<div id="silentHint" hidden>I'm not hearing anything. Is the music playing, and did you tick <b>Also share tab audio</b> in the picker? (Press <kbd>C</kbd> to pick again.)</div>
+
+<div id="hud">
+  <button id="btnNext" title="Next scene (Space)">Next &#9654;</button>
+  <span id="sceneName">-</span>
+  <button id="btnAuto" title="Auto-journey (A)">Auto</button>
+  <label title="Flash / motion intensity. Turn down for a chill vibe ([ and ])">Intensity <input id="intensity" type="range" min="0" max="1.5" step="0.05" value="1"></label>
+  <button id="btnSource" title="Change audio source (C)">Audio source</button>
+  <button id="btnFull" title="Fullscreen (F)">Fullscreen</button>
+</div>
+
+<div id="overlay">
+  <div class="card" style="position:relative">
+    <button id="btnClose" title="Close (Esc)">&times;</button>
+    <h1>FAR OUT &#9774;</h1>
+    <p class="sub">Psychedelic music visualizer. Think old-school Windows Media Player, but melted.</p>
+    <p id="overlayMsg" hidden></p>
+
+    <button id="btnCapture" class="primary">Capture my music (YouTube Music, Spotify, anything)</button>
+    <p class="help" id="captureHelp">In the picker choose the <b>Chrome Tab</b> playing music.youtube.com and tick <b>"Also share tab audio"</b>. Or choose <b>Entire Screen</b> and tick <b>"Share system audio"</b> to hear everything.</p>
+
+    <div class="row2">
+      <button id="btnMic">Mic / line-in</button>
+      <button id="btnDemo">Demo synth</button>
+    </div>
+    <div id="deviceRow" hidden>
+      <select id="deviceSel" aria-label="Input device"></select>
+      <div class="help" id="deviceHint"></div>
+    </div>
+
+    <div class="keys"><kbd>Space</kbd> next scene &nbsp; <kbd>1</kbd>-<kbd>9</kbd> pick &nbsp; <kbd>A</kbd> auto &nbsp; <kbd>F</kbd> fullscreen &nbsp; <kbd>H</kbd> hide UI &nbsp; <kbd>[</kbd><kbd>]</kbd> intensity &nbsp; <kbd>Q</kbd> quality &nbsp; <kbd>C</kbd> audio source &nbsp; click + drag to paint</div>
+    <div class="warn">&#9888; Contains flashing lights and fast motion that may affect people with photosensitive epilepsy. Lower <b>Intensity</b> (or press <kbd>[</kbd>) for a calmer trip.</div>
+  </div>
+</div>
+
+<script>
+  // debug: index.html?timer drives the loop with setTimeout (for hidden/headless panes where rAF never fires)
+  if (/[?&]timer/.test(location.search)) window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 16);
+</script>
+<script src="src/audio.js"></script>
+<script src="src/shaders.js"></script>
+<script src="src/main.js"></script>
+</body>
+</html>
